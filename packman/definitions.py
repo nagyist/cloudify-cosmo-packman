@@ -4,6 +4,8 @@
 PACKAGER_TEMPLATE_PATH = "package-templates/"  # directory which contains config for all modules
 
 # packman base params
+PARAM_GET = 'get'  # base key for the "get" params
+PARAM_PACK = 'pack'  # base key for the "pack" params
 PARAM_NAME = 'name'  # a mandatory 'string' representing the package's name
 PARAM_VERSION = 'version'  # a mandatory 'string' representing the package's version
 PARAM_DEPENDS = 'depends'  # an optional [list] of the dependencies of the package
@@ -11,7 +13,7 @@ PARAM_REQUIRES = 'reqs'  # an optional [list] of the requirements to download
 PARAM_PACKAGE_PATH = 'package_path'  # a mandatory 'string' representing the destination path to be used in the packaging process
 PARAM_SOURCES_PATH = 'sources_path'  # a mandatory 'string' representing the source path to which files will be downloaded
 PARAM_SOURCE_PACKAGE_TYPE = 'src_package_type'  # an optional 'string' representing the source type of the package (as supported by fpm)
-PARAM_DESTINATION_PACKAGE_TYPES = 'dst_package_types'  # a mandatory [list] representing the destination types of the packages you'd like to create (as supported by fpm)
+PARAM_DESTINATION_PACKAGE_TYPES = 'output_types'  # a mandatory [list] representing the destination types of the packages you'd like to create (as supported by fpm)
 PARAM_BOOTSTRAP_SCRIPT_IN_PACKAGE_PATH = 'bootstrap_script_in_pkg'  # an optional 'string' representing a bootstrap script path to be appended to a tar (copied into)
 PARAM_BOOTSTRAP_SCRIPT_PATH = 'bootstrap_script'  # an optional 'string' representing a path to which the bootstrap script (generated from the template) will be written
 PARAM_BOOTSTRAP_TEMPLATE_PATH = 'bootstrap_template'  # an optional 'string' representing a bootstrap script path to be appended to a deb or rpm (appended)
@@ -30,20 +32,20 @@ PARAM_PREREQS = 'prereqs'  # an optional [list] of prerequirements to install fr
 PARAM_KEEP_SOURCES = 'keep_sources'  # an optional 'bool' representing whether to keep the retrieved sources after packaging
 
 # packman configuration files generation params
-PARAM_CONFIG_TEMPLATE_DIR = '__template_dir'  # an optional 'dict' containing config for generating config files from a templates directory
+PARAM_CONFIG_TEMPLATE_DIR = 'template_dir'  # an optional 'dict' containing config for generating config files from a templates directory
 # if PARAM_CONFIG_TEPMLATE_DIR is used:
 PARAM_CONFIG_TEMPALTES_DIR_TEMPLATES_PATH = 'templates'  # a mandatory 'string' stating where the template files reside
 PARAM_CONFIG_TEMPALTES_DIR_CONFIG_DIR = 'config_dir'  # a mandatory 'string' stating where to in the package dir the processed files should reside.
 
-PARAM_CONFIG_TEMPLATE_FILE = '__template_file'  # an optional 'dict' containing config  for generating a config file from a template file
+PARAM_CONFIG_TEMPLATE_FILE = 'template_file'  # an optional 'dict' containing config  for generating a config file from a template file
 # if PARAM_CONFIG_TEMPLATE_FILE is used:
 PARAM_CONFIG_TEMPALTES_FILE_TEMPLATE_FILE = 'template'  # a mandatory 'string' stating where the specific template file resides
 PARAM_CONFIG_TEMPALTES_FILE_OUTPUT_FILE = 'output_file'  # a mandatory 'string' stating the name of the output config file.
 PARAM_CONFIG_TEMPALTES_FILE_CONFIG_DIR = 'config_dir'  # a mandatory 'string' stating where to in the package dir the processed file should reside.
 
-PARAM_CONFIG_CONFIG_DIR = '__config_dir'  # an optional 'dict' containing config for copying config files from a config files directory
+PARAM_CONFIG_CONFIG_DIR = 'config_dir'  # an optional 'dict' containing config for copying config files from a config files directory
 # if PARAM_CONFIG_CONFIG_DIR is used:
 PARAM_CONFIG_FILES_CONFIGS_PATH = 'files'  # a mandatory 'string' stating where the origin config files reside.
 PARAM_CONFIG_FILES_CONFIGS_DIR = 'config_dir'  # a mandatory 'string' stating where to in the package dir the processed file should reside.
 
-PARAM_CONFIG_CONFIG_FILE = '__config_file'  # an optional 'dict' containing config from copying a config file from a directory. (NOT IMPLEMENTED)
+PARAM_CONFIG_CONFIG_FILE = 'config_file'  # an optional 'dict' containing config from copying a config file from a directory. (NOT IMPLEMENTED)

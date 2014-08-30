@@ -73,7 +73,7 @@ setup(
         "fabric==1.8.3",
         "jinja2==2.7.2",
         "docopt==.0.6.1",
-        # "pika==0.9.13",
+        "docker-py"
         # "infi.docopt_completion==0.2.1",
         # "sphinx-rtd-theme",
     ],

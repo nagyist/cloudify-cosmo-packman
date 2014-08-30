@@ -36,6 +36,8 @@ from platform import dist
 import urllib2
 import glob
 
+import docker
+
 # __all__ = ['list']
 
 SUPPORTED_DISTROS = ('Ubuntu', 'debian', 'centos')
@@ -44,6 +46,9 @@ PACKAGE_TYPES = {
     "centos": "rpm",
     "debian": "deb",
 }
+CONTAINER_TYPES = [
+    "docker"
+]
 DEFAULT_BASE_LOGGING_LEVEL = logging.INFO
 DEFAULT_VERBOSE_LOGGING_LEVEL = logging.DEBUG
 
@@ -132,6 +137,27 @@ def check_distro(supported=SUPPORTED_DISTROS, verbose=False):
         raise RuntimeError('distro not supported')
 
 
+def _import_variables_dict(components_file):
+    """returns a variables dictionary
+
+    :param string components_file: components_file to search in
+    :rtype: `dict` with variables
+    """
+    # get components file path
+    components_file = components_file or os.path.join(
+        os.getcwd(), DEFAULT_COMPONENTS_FILE)
+    lgr.debug('components file is: {}'.format(components_file))
+    # append to path for importing
+    sys.path.append(os.path.dirname(components_file))
+    try:
+        return __import__(os.path.basename(os.path.splitext(
+            components_file)[0])).VARIABLES
+    except ImportError:
+        lgr.error('could not import components file or variables dict missing.'
+                  ' please verify that it exists in the specified path')
+        raise PackagerError('missing components file')
+
+
 def _import_components_dict(components_file):
     """returns a components file dictionary
 
@@ -148,13 +174,9 @@ def _import_components_dict(components_file):
         return __import__(os.path.basename(os.path.splitext(
             components_file)[0])).PACKAGES
     except ImportError:
-        lgr.error('could not import packages.py file. please verify that '
+        lgr.error('could not import components file. please verify that '
                   'it exists in the specified path')
-        # TODO: (IMPRV) add conditional raising with verbosity dependency
-        # TODO: (IMPRV) throughout the code
-        # if int(lgr.getEffectiveLevel()) > DEFAULT_BASE_LOGGING_LEVEL:
         raise PackagerError('missing components file')
-        # sys.exit(1)
 
 
 def get_component_config(component_name, components_dict=None,
@@ -313,116 +335,138 @@ def get(component):
      erased before creating a new package
     :rtype: `None`
     """
+
+    def _verify_docker_context(context):
+        if not 'image' in context:
+            raise PackagerError('no docker image supplied')
+
     # you can send the component dict directly, or retrieve it from
     # the packages.py file by sending its name
     c = component if type(component) is dict \
         else get_component_config(component)
 
     # define params for packaging
+    g = c.get(defs.PARAM_GET)
+    p = c.get(defs.PARAM_PACK)
     name = c.get(defs.PARAM_NAME)
-    source_repos = c.get(defs.PARAM_SOURCE_REPOS, [])
-    source_ppas = c.get(defs.PARAM_SOURCE_PPAS, [])
-    source_keys = c.get(defs.PARAM_SOURCE_KEYS, [])
-    source_urls = c.get(defs.PARAM_SOURCE_URLS, [])
-    key_files = c.get(defs.PARAM_KEY_FILES_PATH, [])
-    reqs = c.get(defs.PARAM_REQS, [])
-    prereqs = c.get(defs.PARAM_PREREQS, [])
-    modules = c.get(defs.PARAM_MODULES, [])
-    gems = c.get(defs.PARAM_GEMS, [])
-    dst_path = c.get(defs.PARAM_SOURCES_PATH, False)
-    overwrite = c.get(defs.PARAM_OVERWRITE_SOURCES, True)
+    source_repos = g.get(defs.PARAM_SOURCE_REPOS, [])
+    source_ppas = g.get(defs.PARAM_SOURCE_PPAS, [])
+    source_keys = g.get(defs.PARAM_SOURCE_KEYS, [])
+    source_urls = g.get(defs.PARAM_SOURCE_URLS, [])
+    key_files = g.get(defs.PARAM_KEY_FILES_PATH, [])
+    reqs = g.get(defs.PARAM_REQS, [])
+    prereqs = g.get(defs.PARAM_PREREQS, [])
+    modules = g.get(defs.PARAM_MODULES, [])
+    gems = g.get(defs.PARAM_GEMS, [])
+    dst_path = g.get(defs.PARAM_SOURCES_PATH, False)
+    overwrite = g.get(defs.PARAM_OVERWRITE_SOURCES, True)
+    output_types = p.get(defs.PARAM_DESTINATION_PACKAGE_TYPES, [])
+    # packagize = bool(
+    #     [True for i in list(PACKAGE_TYPES.values()) if i in output_types])
+    # dockerize = True if 'docker' in c[defs.PARAM_DESTINATION_PACKAGE_TYPES] \
+    #     else False
+    # if dockerize:
 
-    common = CommonHandler()
-    if centos:
-        repo_handler = YumHandler()
-    elif debian:
-        repo_handler = AptHandler()
-    dl_handler = WgetHandler()
-    py_handler = PythonHandler()
-    ruby_handler = RubyHandler()
+    for ot in output_types:
+        if ot['type'] == "docker_container":
+            _verify_docker_context(ot['context'])
+            dc = docker.Client(base_url='unix://var/run/docker.sock',
+                               version='1.12', timeout=10)
+            lgr.info('creating container...')
+            dc.create_container(**ot['context'])
+        break
+        common = CommonHandler(ot)
+        if centos:
+            repo_handler = YumHandler(ot)
+        elif debian:
+            repo_handler = AptHandler(ot)
 
-    # should the source dir be removed before retrieving package contents?
-    if overwrite:
-        lgr.info('overwrite enabled. removing {0} before retrieval'.format(
-            dst_path))
-        common.rmdir(dst_path)
-    else:
-        if common.is_dir(dst_path):
-            lgr.error('the destination directory for this package already '
-                      'exists and overwrite is disabled.')
-    # create the directories required for package creation...
-    if not common.is_dir(dst_path):
-        common.mkdir(dst_path)
+        dl_handler = WgetHandler(ot)
+        py_handler = PythonHandler(ot)
+        ruby_handler = RubyHandler(ot)
 
-    # TODO: (TEST) raise on "command not supported by distro"
-    # TODO: (FEAT) add support for building packages from source
-    repo_handler.installs(prereqs)
-    # if there's a source repo to add... add it.
-    repo_handler.add_src_repos(source_repos)
-    # if there's a source ppa to add... add it?
-    if source_ppas:
-        if not debian:
-            raise PackagerError('ppas not supported by {}'.format(
-                get_distro()))
-        repo_handler.add_ppa_repos(source_ppas)
-    # get a key for the repo if it's required..
-    dl_handler.downloads(source_keys, dir=dst_path)
-    for key in source_keys:
-        key_file = urllib2.unquote(key).decode('utf8').split('/')[-1]
-        repo_handler.add_key(os.path.join(dst_path, key_file))
-    # retrieve the source for the package
-    for source_url in source_urls:
-        # retrieve url file extension
-        url_ext = os.path.splitext(source_url)[1]
-        # if the source file is an rpm or deb, we want to download
-        # it to the archives folder. yes, it's a dreadful solution...
-        if url_ext in ('.rpm', '.deb'):
-            lgr.debug('the file is a {0} file. we\'ll download it '
-                      'to the archives folder'.format(url_ext))
-            # elif file:
-            #     path, name = os.path.split(file)
-            #     file = path + '/archives/' + file
-            dl_handler.download(source_url, dir=os.path.join(
-                dst_path, 'archives'))
+        # should the source dir be removed before retrieving package contents?
+        if overwrite:
+            lgr.info('overwrite enabled. removing {0} before retrieval'.format(
+                dst_path))
+            common.rmdir(dst_path)
         else:
-            dl_handler.download(source_url, dir=dst_path)
-    # add the repo key
-    if key_files:
-        repo_handler.add_keys(key_files)
-        repo_handler.update()
-    # download any other requirements if they exist
-    for req in reqs:
-        if type(req) is dict:
-            home = os.path.expanduser('~')
-            common.mkdir('{}/tmp'.format(home), sudo=False)
-            dl_handler.download(
-                req['url'], file='{0}/tmp/{1}_reqs.tar.gz'.format(
-                    home, name), sudo=False)
-            common.untar('{0}/tmp'.format(home),
-                         '{0}/tmp/{1}_reqs.tar.gz'.format(
-                             home, name), strip=0, sudo=False)
-            cf = glob.glob('{}/tmp/packages.py'.format(home))
-            if not cf:
-                cf = glob.glob('{}/tmp/**/packages.py'.format(home))
-            # cfpath = os.path.splitext(cf[0])[0]
-            print 'HAHAAAAAAAAAAAAAAAAAAAA', cf[0]
-            cffile = name + '_' + os.path.basename(cf[0])
-            cfdir = os.path.dirname(cf[0])
-            cfnew = os.path.join(cfdir, cffile)
-            os.rename(cf[0], cfnew)
-            print 'HAHAAAAAAAAAAAAAAAAAAAA', cfnew
-            for component in req['components']:
-                c = get_component_config(
-                    component, components_file=cfnew)
-                # get(c)
-                # pack(c)
-        else:
-            repo_handler.downloads(reqs, dst_path)
-    # download relevant python modules...
-    py_handler.get_python_modules(modules, dst_path)
-    # download relevant ruby gems...
-    ruby_handler.get_ruby_gems(gems, dst_path)
-    lgr.info('package retrieval completed successfully!')
+            if common.is_dir(dst_path):
+                lgr.error('the destination directory for this package already '
+                          'exists and overwrite is disabled.')
+        # create the directories required for package creation...
+        if not common.is_dir(dst_path):
+            common.mkdir(dst_path)
+
+        # TODO: (TEST) raise on "command not supported by distro"
+        # TODO: (FEAT) add support for building packages from source
+        repo_handler.installs(prereqs)
+        # if there's a source repo to add... add it.
+        repo_handler.add_src_repos(source_repos)
+        # if there's a source ppa to add... add it?
+        if source_ppas:
+            if not debian:
+                raise PackagerError('ppas not supported by {}'.format(
+                    get_distro()))
+            repo_handler.add_ppa_repos(source_ppas)
+        # get a key for the repo if it's required..
+        dl_handler.downloads(source_keys, dir=dst_path)
+        for key in source_keys:
+            key_file = urllib2.unquote(key).decode('utf8').split('/')[-1]
+            repo_handler.add_key(os.path.join(dst_path, key_file))
+        # retrieve the source for the package
+        for source_url in source_urls:
+            # retrieve url file extension
+            url_ext = os.path.splitext(source_url)[1]
+            # if the source file is an rpm or deb, we want to download
+            # it to the archives folder. yes, it's a dreadful solution...
+            if url_ext in ('.rpm', '.deb'):
+                lgr.debug('the file is a {0} file. we\'ll download it '
+                          'to the archives folder'.format(url_ext))
+                # elif file:
+                #     path, name = os.path.split(file)
+                #     file = path + '/archives/' + file
+                dl_handler.download(source_url, dir=os.path.join(
+                    dst_path, 'archives'))
+            else:
+                dl_handler.download(source_url, dir=dst_path)
+        # add the repo key
+        if key_files:
+            repo_handler.add_keys(key_files)
+            repo_handler.update()
+        # download any other requirements if they exist
+        for req in reqs:
+            if type(req) is dict:
+                home = os.path.expanduser('~')
+                common.mkdir('{}/tmp'.format(home), sudo=False)
+                dl_handler.download(
+                    req['url'], file='{0}/tmp/{1}_reqs.tar.gz'.format(
+                        home, name), sudo=False)
+                common.untar('{0}/tmp'.format(home),
+                             '{0}/tmp/{1}_reqs.tar.gz'.format(
+                                 home, name), strip=0, sudo=False)
+                cf = glob.glob('{}/tmp/packages.py'.format(home))
+                if not cf:
+                    cf = glob.glob('{}/tmp/**/packages.py'.format(home))
+                # cfpath = os.path.splitext(cf[0])[0]
+                print 'HAHAAAAAAAAAAAAAAAAAAAA', cf[0]
+                cffile = name + '_' + os.path.basename(cf[0])
+                cfdir = os.path.dirname(cf[0])
+                cfnew = os.path.join(cfdir, cffile)
+                os.rename(cf[0], cfnew)
+                print 'HAHAAAAAAAAAAAAAAAAAAAA', cfnew
+                for component in req['components']:
+                    c = get_component_config(
+                        component, components_file=cfnew)
+                    # get(c)
+                    # pack(c)
+            else:
+                repo_handler.downloads(reqs, dst_path)
+        # download relevant python modules...
+        py_handler.get_python_modules(modules, dst_path)
+        # download relevant ruby gems...
+        ruby_handler.get_ruby_gems(gems, dst_path)
+        lgr.info('package retrieval completed successfully!')
 
 
 def pack(component):
@@ -443,7 +487,7 @@ def pack(component):
      depending on its type
     :param string version: version to append to package
     :param string src_pkg_type: package source type (as supported by fpm)
-    :param list dst_pkg_types: package destination types (as supported by fpm)
+    :param list output_types: package destination types (as supported by fpm)
     :param string src_path: path containing sources
      from which package will be created
     :param string tmp_pkg_path: path where temp package is placed
@@ -475,18 +519,18 @@ def pack(component):
         cwd, c[defs.PARAM_BOOTSTRAP_SCRIPT_IN_PACKAGE_PATH]) \
         if defs.PARAM_BOOTSTRAP_SCRIPT_IN_PACKAGE_PATH in c else False
     src_pkg_type = c.get(defs.PARAM_SOURCE_PACKAGE_TYPE, False)
-    dst_pkg_types = c.get(defs.PARAM_DESTINATION_PACKAGE_TYPES, [])
+    output_types = c.get(defs.PARAM_DESTINATION_PACKAGE_TYPES, [])
     # identifies pkg type automatically if not specified explicitly
-    if not dst_pkg_types:
+    if not output_types:
         lgr.debug('destination package type ommitted')
         if centos:
             lgr.debug('assuming default type: {}'.format(
                 PACKAGE_TYPES['centos']))
-            dst_pkg_types = [PACKAGE_TYPES['centos']]
+            output_types = [PACKAGE_TYPES['centos']]
         elif debian:
             lgr.debug('assuming default type: {}'.format(
                 PACKAGE_TYPES['debian']))
-            dst_pkg_types = [PACKAGE_TYPES['debian']]
+            output_types = [PACKAGE_TYPES['debian']]
     sources_path = c.get(defs.PARAM_SOURCES_PATH, False)
     # TODO: (STPD) JEEZ... this archives thing is dumb...
     # TODO: (STPD) replace it with a normal destination path
@@ -554,18 +598,18 @@ def pack(component):
                 # the requirement. for instance, if a bootstrap script
                 # exists, and there are dependencies for the package, run
                 # fpm with the relevant flags.
-                for dst_pkg_type in dst_pkg_types:
-                    i = fpmHandler(name, src_pkg_type, dst_pkg_type,
+                for output_type in output_types:
+                    i = fpmHandler(name, src_pkg_type, output_type,
                                    sources_path, sudo=True)
                     i.fpm(version=version, force=overwrite, depends=depends,
                           after_install=bootstrap_script, chdir=False,
                           before_install=None)
-                    if dst_pkg_type == "tar.gz":
+                    if output_type == "tar.gz":
                         lgr.debug('converting tar to tar.gz...')
                         do('sudo gzip {0}.tar*'.format(name))
                     lgr.info("isolating archives...")
                     common.mv('{0}/*.{1}'.format(
-                        tmp_pkg_path, dst_pkg_type), package_path)
+                        tmp_pkg_path, output_type), package_path)
         # apparently, the src for creation the package doesn't exist...
         # what can you do?
         else:
@@ -577,9 +621,9 @@ def pack(component):
     # be copied to their corresponding destination locations.
     else:
         lgr.info("isolating archives...")
-        for dst_pkg_type in dst_pkg_types:
+        for output_type in output_types:
             common.mv('{0}/*.{1}'.format(
-                tmp_pkg_path, dst_pkg_type), package_path)
+                tmp_pkg_path, output_type), package_path)
     lgr.info('package creation completed successfully!')
     if not keep_sources:
         lgr.debug('removing sources...')
@@ -636,6 +680,10 @@ def do(command, attempts=2, sleep_time=3, accepted_err_codes=None,
 class CommonHandler():
     """common class to handle files and directories
     """
+
+    def __init__(self, context):
+        self.context = context
+
     def find_in_dir(self, dir, pattern, sudo=True):
         """
         finds file/s in a dir
@@ -682,8 +730,10 @@ class CommonHandler():
 
         :param string file: file to touch
         """
+
+        cmd = 'touch {0}'.format(file)
         lgr.debug('creating file {0}'.format(file))
-        return do('touch {0}'.format(file), sudo=sudo)
+        return do(cmd, sudo=sudo)
 
     def mkdir(self, dir, sudo=True):
         """creates (recursively) a directory
