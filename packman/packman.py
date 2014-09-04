@@ -374,7 +374,7 @@ def get(component):
                                version='1.12', timeout=10)
             lgr.info('creating container...')
             dc.create_container(**ot['context'])
-        break
+            # append container to docker context dict
         common = CommonHandler(ot)
         if centos:
             repo_handler = YumHandler(ot)
