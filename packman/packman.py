@@ -372,9 +372,29 @@ def get(component):
             _verify_docker_context(ot['context'])
             dc = docker.Client(base_url='unix://var/run/docker.sock',
                                version='1.12', timeout=10)
+            ctx = ot['context']
+            img_repository, img_tag = ctx['image'].split(':')
+            lgr.info('pulling container from repository: {0} '
+                     'with tag: {1}'.format(img_repository, img_tag))
+            dc.pull(img_repository, tag=img_tag, stream=False)
             lgr.info('creating container...')
-            dc.create_container(**ot['context'])
+            creation_output = dc.create_container(**ctx)
+            print '*******************'
+            print creation_output
+            print '*******************'
+            inspection_output = dc.inspect_container(ctx['name'])
+            print '*******************'
+            print inspection_output
+            print '*******************'
+            commit_output = dc.commit(creation_output['Id'],
+                                      repository=ot['repository'],
+                                      tag=ot.get('tag', None))
+            print '*******************'
+            print commit_output
+            print '*******************'
+            dc.remove_container(creation_output['Id'])
             # append container to docker context dict
+        break
         common = CommonHandler(ot)
         if centos:
             repo_handler = YumHandler(ot)
@@ -681,8 +701,8 @@ class CommonHandler():
     """common class to handle files and directories
     """
 
-    def __init__(self, context):
-        self.context = context
+    def __init__(self, ctx):
+        self.ctx = ctx
 
     def find_in_dir(self, dir, pattern, sudo=True):
         """

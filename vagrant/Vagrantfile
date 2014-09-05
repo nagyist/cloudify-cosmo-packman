@@ -26,7 +26,7 @@ Vagrant.configure('2') do |config|
 
   config.vm.define :packman do |packman|
 
-    packman_ip = '10.0.0.2'
+    packman_ip = '10.0.1.2'
 
     packman.vm.provider :virtualbox do |vb|
       vb.customize ['modifyvm', :id, '--memory', '1024']
@@ -36,7 +36,8 @@ Vagrant.configure('2') do |config|
     packman.vm.box_url = BASE_UBUNTU_BOX_URI
     packman.vm.network :private_network, ip: packman_ip
     packman.vm.hostname = 'packman'
-    packman.vm.synced_folder "../packman/examples", "/home/vagrant/examples", create: true
+    # packman.vm.synced_folder "../packman/examples", "/home/vagrant/examples", create: true
+    packman.vm.synced_folder "../", "/home/vagrant/packman", create: true
     packman.vm.provision "shell", path: "provision.sh", privileged: true
   end
 

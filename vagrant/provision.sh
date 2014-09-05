@@ -23,7 +23,7 @@ curl --silent --show-error --retry 5 https://bootstrap.pypa.io/get-pip.py | sudo
 # install virtualenv
 sudo pip install virtualenv==1.11.4 &&
 # install packman
-sudo pip install packman
+# sudo pip install packman
 # TODO: add virtualenv to provisioning process
 # sudo pip install virtualenvwrapper
 # mkvirtualenv packman

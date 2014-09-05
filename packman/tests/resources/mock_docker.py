@@ -69,17 +69,19 @@ PACKAGES = {
                 {
                     "type": "docker_container",
                     "context": {
-                        "image": "ubuntu:12.04",
+                        "image": "ubuntu:14.04",
+                        "name": "test3"
                     },
+                    "repository": "test_repo"
                 },
-                {
-                    "type": "package",
-                    "context": {
-                        "formats": ["deb", "rpm"],
-                    },
-                    "depends": [ "openjdk-7-jdk" ],
-                    "package_path": "/test/logstash/",
-                }
+                # {
+                #     "type": "package",
+                #     "context": {
+                #         "formats": ["deb", "rpm"],
+                #     },
+                #     "depends": [ "openjdk-7-jdk" ],
+                #     "package_path": "/test/logstash/",
+                # }
             ],
             "bootstrap_script": "logstash-bootstrap.sh",
             "bootstrap_template": "logstash-bootstrap.template",
