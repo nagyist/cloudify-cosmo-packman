@@ -315,7 +315,7 @@ def get(component):
     .. note:: param names in packages.py can be overriden by editing
      definitions.py which also has an explanation on each param.
 
-    :param dict package: dict representing package config
+    :param string|dict component: dict representing package config
      as configured in packages.py
     :param string name: package's name
      will be appended to the filename and to the package
@@ -367,43 +367,44 @@ def get(component):
     #     else False
     # if dockerize:
 
-    for ot in output_types:
-        if ot['type'] == "docker_container":
-            _verify_docker_context(ot['context'])
-            dc = docker.Client(base_url='unix://var/run/docker.sock',
-                               version='1.12', timeout=10)
-            ctx = ot['context']
-            img_repository, img_tag = ctx['image'].split(':')
+    for ctx in output_types:
+        # now if a docker container is requires
+        # pull the required image
+        # createa a container from the image
+        # commit it to a new image
+        # remove the container
+        # pass the image to create the next containers from
+        # always commit to that image
+        if ctx['type'] == "docker_container":
+            _verify_docker_context(ctx['context'])
+            client = docker.Client(base_url='unix://var/run/docker.sock',
+                                   version='1.12', timeout=10)
+            ctx['client'] = client
+            img_repository, img_tag = ctx['context']['image'].split(':')
             lgr.info('pulling container from repository: {0} '
                      'with tag: {1}'.format(img_repository, img_tag))
-            dc.pull(img_repository, tag=img_tag, stream=False)
+            client.pull(img_repository, tag=img_tag, stream=False)
             lgr.info('creating container...')
-            creation_output = dc.create_container(**ctx)
-            print '*******************'
-            print creation_output
-            print '*******************'
-            inspection_output = dc.inspect_container(ctx['name'])
-            print '*******************'
-            print inspection_output
-            print '*******************'
-            commit_output = dc.commit(creation_output['Id'],
-                                      repository=ot['repository'],
-                                      tag=ot.get('tag', None))
-            print '*******************'
-            print commit_output
-            print '*******************'
-            dc.remove_container(creation_output['Id'])
+            ctx['cId'] = client.create_container(
+                command='apt-get update', **ctx['context'])['Id']
+            print '*** container id: {0}'.format(ctx['cId'])
+            # inspection_output = client.inspect_container(
+            #     ctx['context']['name'])
+            ctx['iId'] = client.commit(
+                ctx['cId'], repository=ctx['repository'],
+                tag=ctx.get('tag', None))['Id']
+            print '*** image id: {0}'.format(ctx['iId'])
+            client.remove_container(ctx['cId'])
             # append container to docker context dict
-        break
-        common = CommonHandler(ot)
+        common = CommonHandler(ctx)
         if centos:
-            repo_handler = YumHandler(ot)
+            repo_handler = YumHandler(ctx)
         elif debian:
-            repo_handler = AptHandler(ot)
+            repo_handler = AptHandler(ctx)
 
-        dl_handler = WgetHandler(ot)
-        py_handler = PythonHandler(ot)
-        ruby_handler = RubyHandler(ot)
+        dl_handler = WgetHandler(ctx)
+        py_handler = PythonHandler(ctx)
+        ruby_handler = RubyHandler(ctx)
 
         # should the source dir be removed before retrieving package contents?
         if overwrite:
@@ -417,10 +418,10 @@ def get(component):
         # create the directories required for package creation...
         if not common.is_dir(dst_path):
             common.mkdir(dst_path)
-
         # TODO: (TEST) raise on "command not supported by distro"
         # TODO: (FEAT) add support for building packages from source
         repo_handler.installs(prereqs)
+        break
         # if there's a source repo to add... add it.
         repo_handler.add_src_repos(source_repos)
         # if there's a source ppa to add... add it?
@@ -697,6 +698,15 @@ def do(command, attempts=2, sleep_time=3, accepted_err_codes=None,
         return _execute()
 
 
+def sc(ctx, command):
+    ctx['cId'] = ctx['client'].create_container(ctx['iId'], command)['Id']
+    print '*** container id: {0}'.format(ctx['cId'])
+    ctx['iId'] = ctx['client'].commit(
+        ctx['cId'], repository=ctx['repository'],
+        tag=ctx.get('tag', None))
+    print '*** image id: {0}'.format(ctx['iId'])
+
+
 class CommonHandler():
     """common class to handle files and directories
     """
@@ -761,10 +771,13 @@ class CommonHandler():
         :param string dir: directory to create
         """
         lgr.debug('creating directory {0}'.format(dir))
-        return do('mkdir -p {0}'.format(dir), sudo=sudo) \
-            if not os.path.isdir(dir) \
-            else lgr.debug('directory already exists, skipping.')
-        return False
+        if self.ctx['type'] == 'docker_container':
+            return sc(self.ctx, 'mkdir -p {0}'.format(dir))
+        else:
+            return do('mkdir -p {0}'.format(dir), sudo=sudo) \
+                if not os.path.isdir(dir) \
+                else lgr.debug('directory already exists, skipping.')
+            return False
 
     def rmdir(self, dir, sudo=True):
         """deletes a directory
@@ -1098,6 +1111,10 @@ class YumHandler(CommonHandler):
 
 
 class AptHandler(CommonHandler):
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
     def dpkg_name(self, dir):
         """renames deb files to conventional names
 
@@ -1229,7 +1246,10 @@ class AptHandler(CommonHandler):
         :param string package: package to install
         """
         lgr.debug('installing {0}'.format(package))
-        do('sudo apt-get -y install {0}'.format(package))
+        if self.ctx['type'] == 'docker_container':
+            sc(ctx, 'sudo apt-get -y install {0}'.format(package))
+        else:
+            do('sudo apt-get -y install {0}'.format(package))
 
     def purges(self, packages):
         """completely purges a list of packages from the local repo

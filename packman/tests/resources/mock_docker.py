@@ -63,6 +63,7 @@ PACKAGES = {
         "get": {
             "source_urls": [ "https://download.elasticsearch.org/logstash/logstash/logstash-1.3.2-flatjar.jar" ],
             "sources_path": "/packages/logstash",
+            "prereqs": ['make', 'curl']
         },
         "pack": {
             "output_types": [
