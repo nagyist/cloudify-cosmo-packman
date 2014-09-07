@@ -385,8 +385,7 @@ def get(component):
                      'with tag: {1}'.format(img_repository, img_tag))
             client.pull(img_repository, tag=img_tag, stream=False)
             lgr.info('creating container...')
-            ctx['cId'] = client.create_container(
-                command='apt-get update', **ctx['context'])['Id']
+            ctx['cId'] = client.create_container(**ctx['context'])['Id']
             print '*** container id: {0}'.format(ctx['cId'])
             # inspection_output = client.inspect_container(
             #     ctx['context']['name'])
@@ -420,6 +419,7 @@ def get(component):
             common.mkdir(dst_path)
         # TODO: (TEST) raise on "command not supported by distro"
         # TODO: (FEAT) add support for building packages from source
+        repo_handler.update()
         repo_handler.installs(prereqs)
         break
         # if there's a source repo to add... add it.
@@ -699,11 +699,14 @@ def do(command, attempts=2, sleep_time=3, accepted_err_codes=None,
 
 
 def sc(ctx, command):
-    ctx['cId'] = ctx['client'].create_container(ctx['iId'], command)['Id']
+    ctx['cId'] = ctx['client'].create_container(
+        command=command, **ctx['context'])['Id']
     print '*** container id: {0}'.format(ctx['cId'])
+    ctx['client'].start(ctx['cId'])
     ctx['iId'] = ctx['client'].commit(
         ctx['cId'], repository=ctx['repository'],
         tag=ctx.get('tag', None))
+    # ctx['client'].remove_container(ctx['cId'])
     print '*** image id: {0}'.format(ctx['iId'])
 
 
@@ -1225,12 +1228,15 @@ class AptHandler(CommonHandler):
         lgr.debug('adding key {0}'.format(key_file))
         return do('sudo apt-key add {0}'.format(key_file))
 
-    @staticmethod
-    def update():
+    # @staticmethod
+    def update(self):
         """runs apt-get update
         """
         lgr.debug('updating local apt repo')
-        return do('sudo apt-get update')
+        if self.ctx['type'] == 'docker_container':
+            sc(self.ctx, 'apt-get update')
+        else:
+            return do('sudo apt-get update')
 
     def installs(self, packages):
         """apt-get installs a list of packages
@@ -1247,7 +1253,7 @@ class AptHandler(CommonHandler):
         """
         lgr.debug('installing {0}'.format(package))
         if self.ctx['type'] == 'docker_container':
-            sc(ctx, 'sudo apt-get -y install {0}'.format(package))
+            sc(self.ctx, 'apt-get -y install {0}'.format(package))
         else:
             do('sudo apt-get -y install {0}'.format(package))
 

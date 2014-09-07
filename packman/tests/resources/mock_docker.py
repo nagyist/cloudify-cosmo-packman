@@ -70,8 +70,7 @@ PACKAGES = {
                 {
                     "type": "docker_container",
                     "context": {
-                        "image": "ubuntu:14.04",
-                        "name": "test3"
+                        "image": "ubuntu:14.04"
                     },
                     "repository": "test_repo"
                 },
